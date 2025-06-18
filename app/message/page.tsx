@@ -1,16 +1,17 @@
 "use client";
-import React, { useState, useEffect } from "react";
-import "react-quill/dist/quill.snow.css";
-import dynamic from "next/dynamic";
-
-// Dynamically import Quill to prevent SSR issues
-const ReactQuill = dynamic(() => import("react-quill"), { ssr: false });
+import React, { useState, useEffect, useRef } from "react";
+import "quill/dist/quill.snow.css";
 
 export default function BulkMessagePage() {
   const [dark, setDark] = useState(false);
   const [message, setMessage] = useState("");
   const [mediaFiles, setMediaFiles] = useState<File[]>([]);
+  const [isQuillLoaded, setIsQuillLoaded] = useState(false);
   const phoneNumbers = ["+919876543210", "+918765432109", "+911234567890"]; // Mocked
+
+  // Use a ref to access the quill instance directly
+  const quillRef = useRef<any>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (dark) {
@@ -20,6 +21,45 @@ export default function BulkMessagePage() {
     }
   }, [dark]);
 
+  useEffect(() => {
+    // Only run on client side
+    if (typeof window !== 'undefined' && editorRef.current && !quillRef.current) {
+      // Dynamically import and initialize Quill
+      import('quill').then((QuillModule) => {
+        const QuillClass = QuillModule.default;
+        if (editorRef.current) {
+          quillRef.current = new QuillClass(editorRef.current, {
+            theme: 'snow',
+            placeholder: 'Type in Hindi or English, add bold text, etc.',
+            modules: {
+              toolbar: [
+                [{ 'header': [1, 2, false] }],
+                ['bold', 'italic', 'underline', 'strike'],
+                [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                ['link'],
+                ['clean']
+              ],
+            },
+          });
+        }
+
+        // Listen for text changes
+        quillRef.current.on('text-change', (delta: any, oldDelta: any, source: any) => {
+          const text = quillRef.current?.getText() || '';
+          setMessage(text);
+        });
+
+        setIsQuillLoaded(true);
+      });
+    }
+
+    return () => {
+      if (quillRef.current) {
+        quillRef.current = null;
+      }
+    };
+  }, []);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setMediaFiles(Array.from(e.target.files));
@@ -27,8 +67,11 @@ export default function BulkMessagePage() {
   };
 
   const handleSend = () => {
-    if (!message.trim()) return alert("Please write a message first.");
-    alert(`Sending message to ${phoneNumbers.length} users with ${mediaFiles.length} files.`);
+    const content = quillRef.current?.getText() || '';
+    if (!content.trim()) return alert("Please write a message first.");
+    alert(
+      `Sending message to ${phoneNumbers.length} users with ${mediaFiles.length} files with caption "${content}..."` 
+    );
     // Send message and media to backend
   };
 
@@ -43,9 +86,11 @@ export default function BulkMessagePage() {
       {/* Navbar */}
       <nav
         className={`flex justify-between items-center px-8 py-4 shadow-xl border-b-2
-          ${dark
-            ? "bg-gradient-to-r from-gray-900 via-green-900 to-gray-800 border-green-800"
-            : "bg-gradient-to-r from-green-200 via-white to-green-100 border-green-300"}
+          ${
+            dark
+              ? "bg-gradient-to-r from-gray-900 via-green-900 to-gray-800 border-green-800"
+              : "bg-gradient-to-r from-green-200 via-white to-green-100 border-green-300"
+          }
           rounded-b-2xl relative z-20`}
       >
         <a href="/" className="flex items-center gap-3 group transition">
@@ -122,16 +167,30 @@ export default function BulkMessagePage() {
             >
               Message:
             </label>
-            <ReactQuill
-              theme="snow"
-              value={message}
-              onChange={setMessage}
-              placeholder="Type in Hindi or English, add bold text, etc."
-              className={`bg-white rounded-md ${
-                dark ? "text-black" : "text-green-900"
-              }`}
-              style={{ backgroundColor: dark ? "#fff" : undefined }}
-            />
+            
+            {/* Quill Editor Container */}
+            <div className="bg-white rounded-lg overflow-hidden border">
+              {!isQuillLoaded && (
+                <div className="p-4 text-center text-gray-500">
+                  Loading editor...
+                </div>
+              )}
+              <div
+                ref={editorRef}
+                style={{ minHeight: '150px' }}
+                className="text-gray-900"
+              />
+            </div>
+
+            {/* Current Content Preview */}
+            {message && (
+              <div className={`mt-2 p-2 text-xs rounded ${
+                dark ? "bg-gray-800 text-green-200" : "bg-green-50 text-green-700"
+              }`}>
+                <div className="font-semibold">Current Text:</div>
+                <div className="truncate">{message.substring(0, 100)}{message.length > 100 ? '...' : ''}</div>
+              </div>
+            )}
           </div>
 
           {/* File Upload */}
@@ -163,7 +222,11 @@ export default function BulkMessagePage() {
 
           {/* Info + Send Button */}
           <div className="flex justify-between items-center">
-            <p className={`${dark ? "text-green-200" : "text-green-700"} font-medium`}>
+            <p
+              className={`${
+                dark ? "text-green-200" : "text-green-700"
+              } font-medium`}
+            >
               Total Numbers: {phoneNumbers.length}
             </p>
             <button
